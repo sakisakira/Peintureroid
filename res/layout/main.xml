@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_gravity="center"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent" >
+<jp.sakira.peintureroid.APView  
+  android:layout_width="fill_parent" 
+  android:layout_height="fill_parent" 
+  android:id="@+id/apview" />
+<LinearLayout android:layout_width="fill_parent" 
+  android:layout_height="fill_parent" android:orientation="vertical" 
+		android:id="@+id/control" 
+		android:fadingEdge="none" android:fadingEdgeLength="0sp" 
+		android:padding="0sp"
+		android:scrollbars="none">
+  <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" 
+    android:orientation="horizontal">
+    <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
+    		android:id="@+id/layer_button" android:text="L:0"></Button>
+    <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
+    		android:id="@+id/width_button" android:text="W:10"></Button>
+    <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
+    		android:id="@+id/color_button" android:text="Col"></Button>
+    <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
+    		android:id="@+id/density_button" android:text="D:0.50"></Button>
+    <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
+    		android:id="@+id/change_pen_button" android:text="P#1"></Button>
+    <View
+      android:layout_width="wrap_content"
+      android:layout_height="1dp"
+      android:layout_weight="1"
+    />
+    <Button
+      android:text="info"
+      android:onClick="showAboutAlert"
+      android:textSize="12sp"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content" />
+  </LinearLayout>
+  <LinearLayout android:layout_width="fill_parent" android:layout_height="fill_parent" 
+  	android:orientation="vertical" 
+    android:padding="10dp"
+  		android:id="@+id/optional_controls"></LinearLayout>
+  <LinearLayout android:layout_width="fill_parent" android:layout_height="fill_parent" 
+  	android:orientation="vertical">
+    <TextView android:layout_width="fill_parent" android:layout_height="wrap_content" 
+    		android:id="@+id/message_area" android:text="Draw Mode"></TextView>
+    <Gallery android:layout_width="fill_parent" android:layout_height="fill_parent" 
+    		android:id="@+id/image_gallery" android:text="Draw Mode"></Gallery>
+  </LinearLayout>
+</LinearLayout>
+<LinearLayout
+    android:orientation="vertical"
+    android:gravity="bottom"
+    android:layout_width="fill_parent"
+    android:layout_height="fill_parent">
+  <SeekBar android:id="@+id/zoom_slider"
+    android:max="1600"
+    android:visibility="invisible"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginLeft="10dp"
+    android:layout_marginRight="10dp"/>
+  <LinearLayout
+    android:orientation="horizontal"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content">
+    <RadioGroup
+      android:orientation="horizontal"
+      android:checkedButton="@+id/draw_mode_button"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content">
+      <RadioButton
+        android:text="Draw"
+        android:id="@id/draw_mode_button"
+        android:onClick="DrawMode"
+        android:textColor="#888"
+        android:textSize="16sp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+      <RadioButton
+        android:text="Shift"
+        android:id="@+id/shift_mode_button"
+        android:onClick="ShiftMode"
+        android:textColor="#888"
+        android:textSize="16sp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"/>
+    </RadioGroup>
+    <TextView android:id="@+id/info_label" 
+      android:singleLine="true"
+      android:textColor="#888"
+      android:textSize="16sp"
+      android:layout_width="fill_parent"
+      android:layout_height="wrap_content"
+      android:layout_gravity="right"
+      android:layout_marginLeft="5dp" android:text=" "/>
+  </LinearLayout>
+</LinearLayout>
+<RelativeLayout
+  android:layout_width="fill_parent"
+  android:layout_height="fill_parent" >
+  <View android:id="@+id/spuit_view"
+    android:layout_width="50dp"
+    android:layout_height="50dp" />
+  <jp.sakira.peintureroid.CalibrationView 
+    android:id="@+id/calibration_view"
+    android:visible="false"
+    android:layout_width="100dp"
+    android:layout_height="100dp" />
+</RelativeLayout>
+</FrameLayout>
