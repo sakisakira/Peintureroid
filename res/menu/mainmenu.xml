@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android" >
+
+    <item
+        android:id="@+id/menu_clear_image"
+        android:icon="@drawable/menuitem_new_image"
+        android:title="@string/clear_image"/>
+    <item
+        android:id="@+id/menu_load"
+        android:icon="@drawable/menuitem_load_image"
+        android:title="@string/load">
+        <menu>
+            <item
+                android:id="@+id/menu_load_image"
+                android:icon="@drawable/menuitem_load_image"
+                android:title="@string/load_image"/>    
+            <item
+                android:id="@+id/menu_load_layer"
+                android:icon="@drawable/menuitem_load_image"
+                android:title="@string/load_to_current_layer"/>    
+        </menu>
+    </item>
+
+    <item
+        android:id="@+id/menu_save"
+        android:icon="@drawable/menuitem_save_image"
+        android:title="@string/save">
+        <menu>
+        <item
+            android:id="@+id/menu_save_image"
+            android:icon="@drawable/menuitem_save_image"
+            android:title="@string/save_image"/>
+        <item
+            android:id="@+id/menu_save_layer"
+            android:icon="@drawable/menuitem_save_current_layer"
+            android:title="@string/save_current_layer"/>
+        </menu>
+    </item>
+    
+    <item
+        android:id="@+id/menu_settings"
+        android:icon="@drawable/menuitem_calibration"
+        android:title="@string/settings">
+        <menu>
+            <item
+                android:id="@+id/menu_calibration"
+                android:icon="@drawable/menuitem_calibration"
+                android:title="@string/calibraion"/>
+            <item
+                android:id="@+id/menu_pressure_width"
+                android:icon="@drawable/menuitem_calibration"
+                android:title="@string/pressure_tap_width_cal"/>
+            <item
+                android:id="@+id/menu_finger_function"
+                android:icon="@drawable/menuitem_calibration"
+                android:title="@string/finger_function" />
+            <item
+                android:id="@+id/menu_undo_across_layer"
+                android:icon="@drawable/menuitem_calibration"
+                android:title="@string/undo_across_layer"/>
+        </menu>
+    </item>
+    
+    <item
+        android:id="@+id/menu_quit"
+        android:icon="@drawable/menuitem_quit"
+        android:title="@string/quit"/>
+</menu>

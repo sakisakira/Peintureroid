@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    
+    <string name="app_name">Peintureroid</string>
+    <string name="Col">色</string>
+    <string name="DrawMode">モード</string>
+    <string name="Draw">描画</string>
+    <string name="Shift">シフト</string>
+    <string name="Undo">アンドゥ</string>
+    <string name="Cancel">キャンセル</string>
+    <string name="Dismiss">閉じる</string>
+    <string name="choose_which_layer_you_clear">どのレイヤを削除しますか?</string>
+    <string name="only_current_layer">このレイヤのみ</string>
+    <string name="all_layers">全レイヤ</string>
+    <string name="clear_image">画像消去</string>
+    <string name="load">読み込み</string>
+    <string name="load_image">レイヤ情報付きで読み込み</string>
+    <string name="load_to_current_layer">このレイヤへの読み込み</string>
+    <string name="save">保存</string>
+    <string name="save_image">画像保存</string>
+    <string name="save_current_layer">このレイヤを保存</string>
+    <string name="settings">設定</string>
+    <string name="calibraion">位置補正</string>
+    <string name="pressure_tap_width_cal">筆圧/太さ補正</string>
+    <string name="finger_function">指の機能</string>
+    <string name="undo_across_layer">レイヤをまたいだアンドゥ</string>
+    <string name="across_layers">レイヤをまたぐ</string>
+    <string name="single_layer">一つのレイヤのみ(高速)</string>
+    <string name="quit">終了</string>
+    <string name="Pressure">筆圧</string>
+    <string name="TapSize">ペン幅</string>
+    <string name="drag_the_blue_rect">最大の筆圧と最大の指幅を意識しながら下の青い領域をドラッグして下さい。</string>
+    <string name="finger_function_title">指タッチの機能設定</string>
+    <string name="finger_function_description">スタイラスと指のタッチ区別をデバイスがサポートしている場合だけ設定して下さい。もし区別せずに「通常」以外に設定した場合には描画できなくなります。</string>
+    <string name="finger_function_normal">通常</string>
+    <string name="finger_function_eraser">消しゴム</string>
+    <string name="finger_function_shift">画像シフト</string>
+    <string name="finger_function_none">機能なし</string>    
+</resources>
