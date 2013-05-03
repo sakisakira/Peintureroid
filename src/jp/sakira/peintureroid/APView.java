@@ -1,15 +1,7 @@
 package jp.sakira.peintureroid;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.IntBuffer;
-
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PointF;
@@ -17,7 +9,7 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.Xfermode;
-import android.graphics.Bitmap.CompressFormat;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -28,63 +20,75 @@ import android.view.animation.ScaleAnimation;
 import android.view.animation.TranslateAnimation;
 import android.widget.SeekBar;
 import android.widget.SeekBar.OnSeekBarChangeListener;
+import android.widget.TextView;
+
+enum ViewMode {DRAW, COLOR_PICK, SHIFT};
 
 public class APView extends View 
-    implements OnSeekBarChangeListener  {
-  static final int DRAW_MODE = 1;
-  static final int COLOR_PICK_MODE = 2;
-  static final int SHIFT_MODE = 3;
+    implements OnSeekBarChangeListener {
   
-  static final int CompositionMultiply = 0;
-  static final int CompositionScreen = 1;
-  static final int CompositionNormal = 2;
-  static final int CompositionNumber = 3;
+  enum Composition {Multiply, Screen, Normal};
   static final String[] CompositionNames = {"Mul", "Scr", "Nor"};
-  static Paint[] _compPaint = new Paint[CompositionNumber];
+  static Paint[] _compPaint = new Paint[Composition.values().length];
   Paint _src_paint;
+  
+  public enum FingerFunction {
+    Normal, Eraser, Shift, None
+  }
+  private FingerFunction _finger_function = FingerFunction.Normal;
 
   static final int LayerNumber = 5;
     
   static final int PaintNumber = 6;
   static final int EraserIndex = 0;
     
-  static final int PressureSmoothLevel = 10;
+  static final int PressureSmoothLevel = 12;
+  static final int TapsizeSmoothLevel = 12;
   
   static final float PenWidthMin = 0.1f;
-  static final float PenWidthMax = 50.0f;
-  static final float PenWidthMult = 4.0f;
+  static float penWidthMax = 50.0f;
   static final float ZoomMin = 0.5f;
   static final float ZoomMax = 16.0f;
-  
-  float _pen_width_mult_smooth = 1.0f;
-
-	int _layer_index, _paint_index;
-	int _x0, _y0, _x1, _y1;
-	int _width, _height;
-	float _shift_x, _shift_y, _last_shift_x, _last_shift_y;
-	float _zoom, _last_zoom;
-	float _pressure;
+    
+	public int _layer_index, _paint_index;
+	public int _x0, _y0, _x1, _y1;
+	public int _width, _height;
+	public float _shift_x, _shift_y, _last_shift_x, _last_shift_y;
+	public float _zoom, _last_zoom;
+	
+	boolean _pressure_is_constant = true;
+	float _pressure, _last_pressure = -1;
 	float[] _pressures;
 	int _pressures_index;
-	int _mode;
-  static Bitmap _bitmap = null;
-  static Bitmap _bitmap_p, _bitmap_t, _bitmap565;
-  static Bitmap _bitmap_u;
-	static Bitmap[] _layers = new Bitmap[LayerNumber];
-	static int[] _compositionMethods = new int[LayerNumber];
+	float _max_pressure = 0.01f;
+	
+	boolean _tapsize_is_constant = true;
+	float _tapsize, _last_tapsize = -1;
+	float[] _tapsizes;
+	int _tapsizes_index;
+	float _max_tapsize = 0.01f;
+	boolean _is_of_stylus = false;
+	
+	ViewMode _mode;
+  Bitmap _bitmap = null;
+  Bitmap _bitmap_p, _bitmap_t, _bitmap565;
+	Bitmap[] _layers = new Bitmap[LayerNumber];
+	Composition[] _compositionMethods = new Composition[LayerNumber];
 	Paint[] _paints;
 	AndroidPeinture _app;
 	MultitouchHandler _mt_handler = null;
+	ToolTypeHandler _tool_type_handler = null;
+	UndoManager _undo_manager = null;
 	
 	float[] _diff_x = {0f, 0f, 0f, 0f};
 	float[] _diff_y = {0f, 0f, 0f, 0f};
 	float[] _calibration_center_x = new float[4];
 	float[] _calibration_center_y = new float[4];
 	
-    public APView(Context context) {
-    	super(context);
-    	setup();
-    }
+	public APView(Context context) {
+	  super(context);
+	  setup();
+	}
     
 	public APView(Context context, AttributeSet attrs) {
 		super(context, attrs);
@@ -99,11 +103,10 @@ public class APView extends View
 	void setup() {
 		_x0 = _y0 = -1;
 		_layer_index = 0;
-		_mode = DRAW_MODE;
+		_mode = ViewMode.DRAW;
 		
 		_bitmap = _bitmap_p = _bitmap_t = null;
 		_bitmap565 = null;
-		_bitmap_u = null;
 		for (int i = 0; i < LayerNumber; i ++)
 			_layers[i] = null;
 		
@@ -131,30 +134,32 @@ public class APView extends View
 		_shift_x = _shift_y = _last_shift_x = _last_shift_y = 0.0f;
 		_zoom = _last_zoom = 1.0f;
 		_pressures = new float[PressureSmoothLevel];
+		_tapsizes = new float[TapsizeSmoothLevel];
 		clear_pressures();
+		clear_tapsizes();
 		
 		for (int i = 0; i < LayerNumber; i ++)
-			_compositionMethods[i] = CompositionMultiply;
+			_compositionMethods[i] = Composition.Multiply;
 		
 		Xfermode mult_xfer = new PorterDuffXfermode(
 		    PorterDuff.Mode.MULTIPLY);
 		Paint mult_p = new Paint();
 		mult_p.setXfermode(mult_xfer);
 		mult_p.setFilterBitmap(true);
-		APView._compPaint[CompositionMultiply] = mult_p;
+		APView._compPaint[Composition.Multiply.ordinal()] = mult_p;
 		Xfermode scrn_xfer = new PorterDuffXfermode(
 		    PorterDuff.Mode.SCREEN);
 		Paint scrn_p = new Paint();
 		scrn_p.setXfermode(scrn_xfer);
 		scrn_p.setFilterBitmap(true);
-		APView._compPaint[CompositionScreen] = scrn_p;
+		APView._compPaint[Composition.Screen.ordinal()] = scrn_p;
 //		Xfermode nrml_xfer = new PorterDuffXfermode(
 //		    PorterDuff.Mode.SRC_IN);
 //		Paint nrml_p = new Paint();
 //		nrml_p.setXfermode(nrml_xfer);
 		Paint normal_paint = new Paint();
 		normal_paint.setFilterBitmap(true);
-		APView._compPaint[CompositionNormal] = normal_paint;
+		APView._compPaint[Composition.Normal.ordinal()] = normal_paint;
 		
 		Xfermode src_xfer = new PorterDuffXfermode(
 		    PorterDuff.Mode.SRC);
@@ -168,16 +173,16 @@ public class APView extends View
 	}
 	
 	int eraserColor(int li) {
-	  int lcm = _compositionMethods[li];
+	  Composition lcm = _compositionMethods[li];
 	  int col;
 	  switch (lcm) {
-	  case CompositionMultiply:
+	  case Multiply:
 	    col = 0xffffffff;
 	    break;
-	  case CompositionScreen:
+	  case Screen:
 	    col = 0xff000000;
 	    break;
-	  case CompositionNormal:
+	  case Normal:
 	    col = 0xff000000;
 	    break;
 	  default:
@@ -188,8 +193,10 @@ public class APView extends View
 	
     void start(AndroidPeinture app, int w, int h) {
     	_app = app;
+    	penWidthMax = (w + h) / 4;
+    	
     	if (_bitmap == null)
-    	  clear_buf(w, h);
+    	  clearBuffer(w, h);
     	setFocusable(true);
     	setFocusableInTouchMode(true);
     	requestFocus();
@@ -197,42 +204,94 @@ public class APView extends View
     	setClickable(true);
     	setDrawingCacheQuality(2);
     	
-    	try {
+    	if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ECLAIR) {
     	  this._mt_handler = new MultitouchHandler(this);
-    	} catch (VerifyError e) {
+    	} else {
     	  this._mt_handler = null;
+    	}
+
+    	if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ICE_CREAM_SANDWICH) {
+    	  this._tool_type_handler = new ToolTypeHandler();
+    	} else {
+    	  this._tool_type_handler = null;
     	}
     	
    	  _calibration_center_x[0] = _calibration_center_x[2] = 0;
    	  _calibration_center_x[1] = _calibration_center_x[3] = w;
    	  _calibration_center_y[0] = _calibration_center_y[1] = 0;
    	  _calibration_center_y[2] = _calibration_center_y[3] = h;
+   	  
+      clearPenLayer();
+      apply_pen_layer();
+      changeLayer(0);
     }
     
-    void clear_pressures() {
+    private void clear_pressures() {
     	for (int i = 0; i < PressureSmoothLevel; i ++)
-    		_pressures[i] = 0.0f;
+    		_pressures[i] = -1.0f;
     	_pressures_index = 0;
     }
     
-    float smooth_pressure(float f) {
-    	float s = 0.0f;
-    	
-    	float const_pressure = _pressures[0];
-    	boolean is_constant = true;
-    	for (int i = 1; i < PressureSmoothLevel; i ++) {
-    	  if (const_pressure != _pressures[i])
-    	    is_constant = false;
-    	}
-    	if (is_constant || (const_pressure != 0)) return 1.0f;
-    	
+    private void clear_tapsizes() {
+      for (int i = 0; i < TapsizeSmoothLevel; i ++)
+        _tapsizes[i] = -1.0f;
+      _tapsizes_index = 0;
+    }
+    
+    private float smooth_pressure(float f) {
+      if (_pressure_is_constant) {
+        if (_last_pressure < 0.0f && f > 0)
+          _last_pressure = f;
+        if (_last_pressure != f && f > 0)
+          _pressure_is_constant = false;
+      }
+      if (_pressure_is_constant) return 1.0f;
+    	    	
     	_pressures[_pressures_index] = f;
     	_pressures_index = (_pressures_index + 1) % PressureSmoothLevel;
     	
+      float s = 0.0f;
+      int count = 0;
     	for (int i = 0;i < PressureSmoothLevel; i ++)
-    		s += _pressures[i];
-    	
-    	return s / PressureSmoothLevel;
+    	  if (_pressures[i] >= 0) {
+    	    s += _pressures[i];
+    	    count ++;
+    	  }
+    	s /= count;
+    	return s;
+    }
+    
+    private float smooth_tapsize(float f) {
+      if (_tapsize_is_constant) {
+        if (_last_tapsize < 0 && f > 0)
+          _last_tapsize = f;
+        if (_last_tapsize != f && f > 0)
+          _tapsize_is_constant = false;
+      }
+      if (_tapsize_is_constant) return 1.0f;
+      
+      _tapsizes[_tapsizes_index] = f;
+      _tapsizes_index = (_tapsizes_index + 1) % TapsizeSmoothLevel;
+      
+      float s = 0.0f;
+      int count = 0;
+      for (int i = 0; i < TapsizeSmoothLevel; i ++)
+        if (_tapsizes[i] >= 0) {
+          s += _tapsizes[i];
+          count ++;
+        }
+      s /= count;
+      return s;
+    }
+    
+    public FingerFunction fingerFunction() {
+      return _finger_function;
+    }
+    
+    public void setFingerFunction(FingerFunction func) {
+      _finger_function = func;
+      if (_tool_type_handler != null)
+        _tool_type_handler.setDrawInfo(_finger_function, _paint_index);
     }
     
     Paint paint() {
@@ -271,124 +330,6 @@ public class APView extends View
     			(c & 0x00ffffff));
     }
     
-    boolean outputPNG(OutputStream os) {
-    	return _bitmap.compress(CompressFormat.PNG, 100, os);
-    }
-    
-    boolean outputPNG(int li, OutputStream os) {
-    	if (li < 0 || li >= LayerNumber) return false;
-    	if (_layers[li] == null) return false;
-    	
-    	return _layers[li].compress(CompressFormat.PNG, 100, os);
-    }
-        
-    boolean outputCurrentLayerPNG(OutputStream os) {
-    	return outputPNG(_layer_index, os);
-    }
-
-    boolean outputRAW(int li, OutputStream os) {
-    	if (li < 0 || li >= LayerNumber) return false;
-    	
-    	ByteBuffer bbuf = ByteBuffer.allocate(_width * _height * 4);
-    	_layers[li].copyPixelsToBuffer(bbuf);
-    	byte[] data = bbuf.array();
-    	try {
-			os.write(data, 0, data.length);
-		} catch (IOException e1) {
-			e1.printStackTrace();
-			return false;
-		}
-		return true;
-    }
-    
-    boolean inputRAW(int li, InputStream is) {
-    	if (li < 0 || li >= LayerNumber) return false;
-
-    	byte[] data = new byte[_width * _height * 4];
-    	try {
-			is.read(data, 0, data.length);
-		} catch (IOException e1) {
-			e1.printStackTrace();
-			return false;
-		}
-		IntBuffer ibuf = ByteBuffer.wrap(data).asIntBuffer();
-    	int[] pixels = new int[_width * _height];
-    	ibuf.get(pixels);
-    	Bitmap temp_bmp = Bitmap.createBitmap(pixels, _width, _height, 
-    			Bitmap.Config.ARGB_8888);
-    	Canvas cur_canvas = new Canvas(_layers[li]);
-    	cur_canvas.drawBitmap(temp_bmp, 0, 0, _src_paint);
-    	temp_bmp.recycle();
-    	return true;
-    }
-    
-    void inputImage(int li, InputStream is) {
-    	if (li < 0 || li >= LayerNumber) return;
-    	
-    	if (_layers[li] == null)
-    		init_layer(li);
-    	Bitmap temp_bmp = BitmapFactory.decodeStream(is);
-    	if (temp_bmp == null) {
-    	  _layers[li].recycle();
-    	  _layers[li] = null;
-    	} else {
-    		Canvas cur_canvas = new Canvas(_layers[li]);
-    		cur_canvas.drawBitmap(temp_bmp, 0, 0, _src_paint);
-    		temp_bmp.recycle();
-    	}
-    }
-    
-    void inputImage(int li, File imgfile) {
-    	if (li < 0 || li >= LayerNumber) return;
-    	
-    	Bitmap temp_bmp = BitmapFactory.decodeFile(imgfile.getAbsolutePath());
-    	if (temp_bmp != null) {
-    		Canvas cur_canvas = new Canvas(_layers[li]);
-    		cur_canvas.drawBitmap(temp_bmp, 0, 0, _src_paint);
-    		temp_bmp.recycle();
-    	}
-    }
-    
-    void inputImageToCurrentLayer(InputStream is) {
-    	inputImage(_layer_index, is);
-    }
-    
-    void inputImage(int li, byte[] imgdata) {
-    	if (li < 0 || li >= LayerNumber) return;
-    	
-    	Bitmap temp_bmp = BitmapFactory.decodeByteArray(imgdata, 0, imgdata.length);
-    	if (temp_bmp != null) {
-    		Canvas cur_canvas = new Canvas(_layers[li]);
-    		cur_canvas.drawBitmap(temp_bmp, 0, 0, _src_paint);
-    		temp_bmp.recycle();
-    	}
-    }
-
-    void setImage(int li, Bitmap b) {
-    	float ratio;
-    	int bw, bh;
-    	Rect rect;
-    	Canvas cur_canvas = new Canvas(_layers[li]);
-    	
-    	bw = b.getWidth();
-    	bh = b.getHeight();
-    	ratio = (float)bh / _height;
-    	if (ratio * _width <= bw) {
-    		rect = new Rect((int)(bw - ratio * _width) / 2, 0,
-    				(int)(bw + ratio * _width) / 2, bh);
-    	} else {
-    		ratio = (float)bw / _width;
-    		rect = new Rect(0, (int)(bh - ratio * _height) / 2,
-    				bw, (int)(bh + ratio * _width) / 2);
-    	}
-    	
-    	cur_canvas.drawBitmap(b, rect, new Rect(0, 0, _width, _height), 
-    	    _src_paint);
-    }
-    
-    void setImageToCurrentLayer(Bitmap b) {
-    	setImage(_layer_index, b);
-    }
     
     void setMessage(String msg) {
     	_app._message_area.setText(msg);
@@ -398,23 +339,23 @@ public class APView extends View
     	this.setMode(this._mode);
     }
     
-    void setMode(int m) {
+    void setMode(ViewMode m) {
     	boolean zoom_slider_visible = false;
     	boolean spuit_view_visible = false;
 
     	String msg = "";
     	switch (m) {
-    		case DRAW_MODE:
+    		case DRAW:
     			msg = "Draw Mode";
     			zoom_slider_visible = false;
     			spuit_view_visible = false;
     			break;
-    		case COLOR_PICK_MODE:
+    		case COLOR_PICK:
     			msg = "Color Pick Mode";
     			zoom_slider_visible = false;
     			spuit_view_visible = true;
     			break;
-    		case SHIFT_MODE:
+    		case SHIFT:
     			msg = "Shift Mode";
     			zoom_slider_visible = true;
     			spuit_view_visible = false;
@@ -432,38 +373,39 @@ public class APView extends View
     }
     
     void initCurrentLayer() {
-      init_layer(_layer_index);
-      clear_pen_layer();
+      initLayer(_layer_index);
+      clearPenLayer();
+      _undo_manager.setImageToLayer(_layers[_layer_index], _layer_index, false);
       apply_layers(new Rect(0, 0, _width, _height));
       invalidate();
     }
     
-    void init_layer(int li) {
+    public void initLayer(int li) {
       if (_layers[li] != null)
         _layers[li].recycle();
 
       _layers[li] =  Bitmap.createBitmap(_width, _height, 
           Bitmap.Config.ARGB_8888);
-      int ci = _compositionMethods[li];
+      Composition ci = _compositionMethods[li];
       int col = 0;
-      if (ci == CompositionMultiply)
+      if (ci == Composition.Multiply)
         col = 0xffffffff;
-      else if (ci == CompositionScreen)
+      else if (ci == Composition.Screen)
         col = 0xff000000;
-      else if (ci == CompositionNormal)
+      else if (ci == Composition.Normal)
         col = 0x00ffffff;
       Log.i("peintureroid", "li:" + li + " ci:" + ci + " col:" + col);
       _layers[li].eraseColor(col);
     }
     
-    void setCompositionMode(int li, int ci) {
+    void setCompositionMode(int li, Composition ci) {
       _compositionMethods[li] = ci;
-      clear_pen_layer();
+      clearPenLayer();
       apply_layers(new Rect(0, 0, _width, _height));
-      change_layer(li);
+      changeLayer(li);
     }
     
-    void clear_buf(int w, int h) {
+    public void clearBuffer(int w, int h) {
       _width = w;
       _height = h;
 
@@ -479,18 +421,17 @@ public class APView extends View
       _bitmap_p = null;
       if (_bitmap_t != null) _bitmap_t.recycle();
       _bitmap_t = null;
-      if (_bitmap_u != null) _bitmap_u.recycle();
-      _bitmap_u = null;
       if (_bitmap565 != null) _bitmap565.recycle();
       _bitmap565 = null;
+      _undo_manager = null;
 
       System.gc();
 
       this._layer_index = 0;
-      init_layer(0);
+      initLayer(0);
 
       for (int i = 0; i < LayerNumber; i ++)
-        _compositionMethods[i] = CompositionMultiply;
+        _compositionMethods[i] = Composition.Multiply;
 
       _bitmap = Bitmap.createBitmap(_width, _height, 
           Bitmap.Config.ARGB_8888);
@@ -498,16 +439,16 @@ public class APView extends View
           Bitmap.Config.ARGB_8888);
       _bitmap_t = Bitmap.createBitmap(_width, _height, 
           Bitmap.Config.ARGB_8888);
-      _bitmap_u = Bitmap.createBitmap(_width, _height, 
-          Bitmap.Config.ARGB_8888);
       _bitmap565 = Bitmap.createBitmap(2, 2,
           Bitmap.Config.RGB_565);
-
+      _undo_manager = new UndoManager(_app.getApplication(), this);
+      _undo_manager.undoLabel = (TextView)_app.findViewById(R.id.undo_label);
+      _undo_manager.setImageToLayer(_layers[_layer_index], _layer_index, true);
+      
       _bitmap_t.eraseColor(0);
       _bitmap_p.eraseColor(0);
-      _bitmap_u.eraseColor(0);
 
-      clear_pen_layer();
+      clearPenLayer();
       apply_layers(new Rect(0, 0, _width, _height));
 
       invalidate();
@@ -525,7 +466,7 @@ public class APView extends View
       p.setAlpha(paint().getAlpha());
       p.setFilterBitmap(true);
       if (_paint_index == EraserIndex && 
-          _compositionMethods[_layer_index] == CompositionNormal) {
+          _compositionMethods[_layer_index] == Composition.Normal) {
         Xfermode mult = new PorterDuffXfermode(
             PorterDuff.Mode.DST_OUT);
         p.setXfermode(mult);
@@ -533,12 +474,11 @@ public class APView extends View
       cl.drawBitmap(_bitmap_p, rect, rect, p);
 
       Canvas canvas = new Canvas(_bitmap);
-//      canvas.drawBitmap(_layers[0], rect, rect, null);
       canvas.drawBitmap(_layers[0], rect, rect, _src_paint);
       for (int i = 1; i < LayerNumber; i ++)
         if (_layers[i] != null)
           canvas.drawBitmap(_layers[i], rect, rect, 
-              _compPaint[_compositionMethods[i]]);
+              _compPaint[_compositionMethods[i].ordinal()]);
     }
 	
     void apply_pen_layer() {
@@ -548,26 +488,27 @@ public class APView extends View
     	p.setAlpha(paint().getAlpha());
     	p.setFilterBitmap(true);
     	if (_paint_index == EraserIndex && 
-    			_compositionMethods[_layer_index] == CompositionNormal) {
+    			_compositionMethods[_layer_index] == Composition.Normal) {
     		Xfermode mult = new PorterDuffXfermode(
     				PorterDuff.Mode.DST_OUT);
     		p.setXfermode(mult);
     	}
+    	Log.i("peintureroid", "_bitmap_p:" + _bitmap_p);
     	cl.drawBitmap(_bitmap_p, 0, 0, p);
     }
 
-    void clear_pen_layer() {
-      Canvas cu = new Canvas(_bitmap_u);
-      cu.drawBitmap(_bitmap_t, 0, 0, _src_paint);
+    public void clearPenLayer() {
       _bitmap_p.eraseColor(0);
+      if (_layers[_layer_index] == null)
+        initLayer(_layer_index);
       
-      int ci = _compositionMethods[_layer_index];
+      Composition ci = _compositionMethods[_layer_index];
       int col = 0;
-      if (ci == CompositionMultiply)
+      if (ci == Composition.Multiply)
         col = 0xffffffff;
-      else if (ci == CompositionScreen)
+      else if (ci == Composition.Screen)
         col = 0xff000000;
-      else if (ci == CompositionNormal)
+      else if (ci == Composition.Normal)
         col = 0x00ffffff;
       _bitmap_t.eraseColor(col);
       Canvas ct = new Canvas(_bitmap_t);
@@ -579,16 +520,18 @@ public class APView extends View
       apply_layers(new Rect(0, 0, _width, _height));
     }
 
-    void change_layer(int l) {
+    public void changeLayer(int l) {
       if (l >= LayerNumber || l < 0) return;
 
       apply_pen_layer();
       if (_layers[l] == null)
-        init_layer(l);
+        initLayer(l);
       _layer_index = l;
-      clear_pen_layer();
+      clearPenLayer();
 
       apply_layers(new Rect(0, 0, _width, _height));
+      _undo_manager.setImageToLayer(_layers[_layer_index], _layer_index, false);
+      _undo_manager.checkLayerChanged(_layer_index);
       Log.i("peintureroid", "layer changed to " + l);
     }
     
@@ -597,82 +540,104 @@ public class APView extends View
 
       _paint_index = p;
       _app.setPaintButtons(paint());
+      
+      if (_tool_type_handler != null)
+        _tool_type_handler.setDrawInfo(_finger_function, _paint_index);
     }
 
-    void undo() {
-      Canvas ct = new Canvas(_bitmap_t);
-      ct.drawBitmap(_bitmap_u, 0, 0, _src_paint);
-      change_layer(_layer_index);
+    public void undo() {
+      _undo_manager.undo();
+      Canvas c = new Canvas(_bitmap_t);
+      c.drawBitmap(_layers[_layer_index], 0, 0, _src_paint);
+      _bitmap_p.eraseColor(0);
+      changeLayer(_layer_index);
 
       invalidate();
     }
     
-    int zoomx(int ox) {
+    public void redo() {
+      _undo_manager.redo();
+      Canvas c = new Canvas(_bitmap_t);
+      c.drawBitmap(_layers[_layer_index], 0, 0, _src_paint);
+      _bitmap_p.eraseColor(0);
+      changeLayer(_layer_index);
+
+      invalidate();      
+    }
+    
+    private int zoomx(int ox) {
     	return (int)(_shift_x + ox / _zoom);
     }
     
-    int zoomy(int oy) {
+    private int zoomy(int oy) {
     	return (int)(_shift_y + oy / _zoom);
     }
     
-    void adjust_shift() {
+    public void adjust_shift() {
       _zoom = Math.max(Math.min(_zoom, ZoomMax), ZoomMin);
-    	
-    	if ((_last_zoom - 1.0f) * (_zoom - 1.0f) < 0)
-    		_zoom = 1.0f;
-    	
-    	if (_zoom <= 1.0f) {
-    		_shift_x = - (_width / _zoom - _width) / 2;
-    		_shift_y = - (_height / _zoom - _height) / 2;
-    	} else {
-    		_shift_x = Math.max(- _width / (_zoom  * 2),
-    				Math.min(_width - _width / (_zoom  * 2), _shift_x));
-    		_shift_y = Math.max(- _height / (_zoom  * 2),
-    				Math.min(_height - _height / (_zoom  * 2), _shift_y));
-    	}
-    	
-		AnimationSet anim = new AnimationSet(true);
-		anim.addAnimation(new TranslateAnimation(
-				- _last_shift_x, - _shift_x,
-				- _last_shift_y, - _shift_y));
-		anim.addAnimation(new ScaleAnimation(_last_zoom, _zoom,
-				_last_zoom, _zoom));
-		anim.setFillAfter(true);
-		anim.setDuration(100);
-		startAnimation(anim);
-		
-		_last_shift_x = _shift_x;
-		_last_shift_y = _shift_y;
-		_last_zoom = _zoom;
+
+      if ((_last_zoom - 1.0f) * (_zoom - 1.0f) < 0)
+        _zoom = 1.0f;
+
+      _shift_x = Math.max(- _width / (_zoom  * 2),
+          Math.min(_width - _width / (_zoom  * 2), _shift_x));
+      _shift_y = Math.max(- _height / (_zoom  * 2),
+          Math.min(_height - _height / (_zoom  * 2), _shift_y));
+
+      AnimationSet anim = new AnimationSet(true);
+      anim.addAnimation(new TranslateAnimation(
+          - _last_shift_x, - _shift_x,
+          - _last_shift_y, - _shift_y));
+      anim.addAnimation(new ScaleAnimation(_last_zoom, _zoom,
+          _last_zoom, _zoom));
+      anim.setFillAfter(true);
+      anim.setDuration(100);
+      startAnimation(anim);
+
+      _last_shift_x = _shift_x;
+      _last_shift_y = _shift_y;
+      _last_zoom = _zoom;
     }
 	
     public void drawLine(int ox0, int oy0, int ox1, int oy1) {
-    	Canvas c = new Canvas(_bitmap_p);
-    	Paint p = new Paint(paint());
-    	if (_paint_index == EraserIndex)
-    	  p.setColor(eraserColor());
-    	p.setAlpha(0xff);
-    	float pen_width;
-    	if (_pressure == 0.0f)
-    	  pen_width = paint().getStrokeWidth();
-    	else
-    	  pen_width = paint().getStrokeWidth() * _pressure * PenWidthMult;
-    	p.setStrokeWidth(pen_width);
-    	c.drawLine(zoomx(ox0), zoomy(oy0), 
-    			zoomx(ox1), zoomy(oy1), p);
+      Canvas c = new Canvas(_bitmap_p);
+      Paint p = new Paint(paint());
+      if (_paint_index == EraserIndex) {
+        p.setColor(eraserColor());
+      } else {
+        p.setAlpha((int)(_pressure * 0xff));
+        p.setXfermode(_src_paint.getXfermode());
+      }
+
+      float pen_width;
+      if (_is_of_stylus) {
+        pen_width = paint().getStrokeWidth() * _pressure;
+      } else if (_pressure_is_constant) {
+        pen_width = paint().getStrokeWidth();
+      } else {
+        pen_width = paint().getStrokeWidth() * _tapsize;
+      }
+      p.setStrokeWidth(pen_width);
+      float x0 = zoomx(ox0);
+      float y0 = zoomy(oy0);
+      float x1 = zoomx(ox1);
+      float y1 = zoomy(oy1);
+      c.drawLine(x0, y0, x1, y1, p);
+      _undo_manager.addLine(x0, y0, x1, y1, p);
     }
-	
-	void touchPressed(int x, int y) {
-		setMessage("");
-		_x0 = x;
-		_y0 = y;
-	}
+
+    void touchPressed(int x, int y) {
+      setMessage("");
+      _x0 = x;
+      _y0 = y;
+      _undo_manager.startStroke(paint(), _layer_index);
+    }
 	
 	void touchDragged(int[] xs, int[] ys) {
 		if (_x0 < 0) return;
 		
 		int pen_width = (int)paint().getStrokeWidth();
-		int pwh = (int)((pen_width / 2 + 1) * _zoom * PenWidthMult);
+		int pwh = (int)((pen_width / 2 + 1) * _zoom);
 		int lastx = this._x0;
 		int lasty = this._y0;
 		
@@ -680,29 +645,30 @@ public class APView extends View
 		x = lastx; y = lasty;
 		min_x = lastx - pwh;
 		max_x = lastx + pwh;
-    	min_y = lasty - pwh;
-    	max_y = lasty + pwh;
+		min_y = lasty - pwh;
+		max_y = lasty + pwh;
 		for (int i = 0; i < xs.length; i ++) {
 		  x = xs[i];
 		  y = ys[i];
 		  drawLine(lastx, lasty, x, y);
 		  min_x = Math.min(min_x, x - pwh);
 		  max_x = Math.max(max_x, x + pwh);
-       	  min_y = Math.min(min_y, y - pwh);
-          max_y = Math.max(max_y, y + pwh);
-          lastx = x; lasty = y;
+		  min_y = Math.min(min_y, y - pwh);
+		  max_y = Math.max(max_y, y + pwh);
+		  lastx = x; lasty = y;
 		}
 		
 		apply_layers(new Rect(zoomx(min_x), zoomy(min_y),
 				zoomx(max_x), zoomy(max_y)));
 		_x0 = lastx; _y0 = lasty;
-    	_x1 = x; _y1 = y;
+    _x1 = x; _y1 = y;
 		invalidate(new Rect(min_x, min_y, max_x, max_y));
 	}
 	
 	void touchReleased(int x, int y) {
+	  _undo_manager.endStroke();
 		apply_pen_layer();
-		clear_pen_layer();
+		clearPenLayer();
 		apply_layers(new Rect(0, 0, _width, _height));
 		_x0 = _y0 = -1;
 	}
@@ -725,7 +691,7 @@ public class APView extends View
 		_x0 = _y0 = _x1 = _y1 = -1;
 	}
 	
-	void calibrate(PointF pt) {
+	private void calibrate(PointF pt) {
 	  if (_diff_x[0] == 0 && _diff_y[0] == 0 &&
 	      _diff_x[1] == 0 && _diff_y[1] == 0 &&
 	      _diff_x[2] == 0 && _diff_y[2] == 0 &&
@@ -754,23 +720,36 @@ public class APView extends View
 	  pt.y -= dy;
 	}
 	
-
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
 		if (_bitmap == null) return false;
-		if (_mt_handler != null &&
-		    _mt_handler.multitouch_handler(event)) 
-		  return true;
-	
+
+    if (_mt_handler != null &&
+        _mt_handler.multitouch_handler(event)) 
+      return true;
+
+    ViewMode mode = _mode;
+    if (_tool_type_handler == null) {
+      _is_of_stylus = false;
+    } else if (mode == ViewMode.DRAW) {
+      DrawInfo draw_info = _tool_type_handler.parse(event);
+      mode = draw_info.mode;
+      _paint_index = draw_info.paintIndex;
+      _is_of_stylus = draw_info.isStylus;
+      if (!draw_info.process) return true;
+    }    
+		
 		PointF cpt = new PointF(event.getX(), event.getY());
 		calibrate(cpt);
     int x = (int)cpt.x;
     int y = (int)cpt.y;
 	    
-//    Log.i("peinturoid", "pressure" + event.getPressure());
-    _pressure = smooth_pressure(event.getPressure());
+    _pressure = smooth_pressure(event.getPressure() / _max_pressure);
+    _tapsize = smooth_tapsize(event.getSize() / _max_tapsize);
+    if (_pressure > 1.0f) _pressure = 1.0f;
+    if (_tapsize > 1.0f) _tapsize = 1.0f;
 	    
-    if (_mode == DRAW_MODE) {
+    if (mode == ViewMode.DRAW) {
       switch (event.getAction()) {
       case MotionEvent.ACTION_DOWN:
         touchPressed(x, y);
@@ -793,9 +772,10 @@ public class APView extends View
       case MotionEvent.ACTION_UP:
         touchReleased(x, y);
         clear_pressures();
+        clear_tapsizes();
         break;
       }	
-    } else if (_mode == COLOR_PICK_MODE) {
+    } else if (mode == ViewMode.COLOR_PICK) {
       switch (event.getAction()) {
       case MotionEvent.ACTION_DOWN:
       case MotionEvent.ACTION_MOVE:
@@ -812,10 +792,10 @@ public class APView extends View
         this.layoutSpuitView(x, y);
         break;
       case MotionEvent.ACTION_UP:
-        setMode(DRAW_MODE);
+        setMode(ViewMode.DRAW);
         break;
       }
-    } else if (_mode == SHIFT_MODE) {
+    } else if (mode == ViewMode.SHIFT) {
       switch (event.getAction()) {
       case MotionEvent.ACTION_DOWN:
         touchPressedShift(x, y);
@@ -830,7 +810,7 @@ public class APView extends View
     }
     return true;
 	}
-	
+		
 	@Override
 	protected void onDraw(Canvas canvas) {
 		super.onDraw(canvas);
@@ -840,7 +820,7 @@ public class APView extends View
 		}
 	}
 	
-	void change_zoom(float diffz) {
+	private void change_zoom(float diffz) {
 		float nzoom = _zoom + diffz;
 		if (_x1 < 0 || _x1 >= getWidth() ||
 				_y1 < 0 || _y1 >= getHeight()) {
@@ -858,10 +838,10 @@ public class APView extends View
 	public boolean onKeyDown(int keyCode, KeyEvent event) {
 		switch(keyCode) {
 		case KeyEvent.KEYCODE_DPAD_CENTER:
-			if (_mode != SHIFT_MODE)
-				setMode(SHIFT_MODE);
+			if (_mode != ViewMode.SHIFT)
+				setMode(ViewMode.SHIFT);
 			else
-				setMode(DRAW_MODE);
+				setMode(ViewMode.DRAW);
 			return true;
 		case KeyEvent.KEYCODE_DPAD_DOWN:
 			change_zoom(- 0.2f);
@@ -877,7 +857,7 @@ public class APView extends View
 	}
 
   public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-    if (seekBar == _app._zoom_slider && this._mode == SHIFT_MODE) {
+    if (seekBar == _app._zoom_slider && this._mode == ViewMode.SHIFT) {
       float nzoom = (progress / 100.0f) + ZoomMin;
       if (_x1 < 0 || _x1 >= getWidth() ||
           _y1 < 0 || _y1 >= getHeight()) {
@@ -909,6 +889,23 @@ public class APView extends View
     Log.i("peintureroid", "spuit x=" + x_ + " y=" + 
     		y_ + " w=" + w + " h=" + h);
     _app._spuit_view.setVisibility(VISIBLE);
+  }
+  
+  void drawCurrentPen() {
+    _is_of_stylus = false;
+    _pressure_is_constant = true;
+    _bitmap_p.eraseColor(0);
+    final int cx = zoomx(getWidth() / 2);
+    final int cy = zoomy(getHeight() / 2);
+    drawLine(cx - 1, cy - 1 , cx + 1, cy + 1);
+    apply_layers(new Rect(0, 0, _width, _height));
+    invalidate();
+  }
+  
+  void clearCurrentPen() {
+    _bitmap_p.eraseColor(0);
+    apply_layers(new Rect(0, 0, _width, _height));
+    invalidate();
   }
 
 }

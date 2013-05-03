@@ -8,47 +8,46 @@ import java.io.OutputStream;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.DialogInterface.OnClickListener;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
-import android.graphics.Bitmap;
 import android.graphics.Paint;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
-import android.view.TouchDelegate;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CompoundButton;
-import android.widget.Gallery;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.support.v4.app.FragmentActivity;
 import android.util.DisplayMetrics;
 import android.util.Log;
-
-public class AndroidPeinture extends Activity implements
+
+public class AndroidPeinture extends FragmentActivity implements
     android.widget.CompoundButton.OnCheckedChangeListener {
-  int _height, _width;
-  SeekBar _zoom_slider;
-  View _spuit_view;
-  CalibrationView _calibration_view;
-  int _calibration_index;
+  private int _height, _width;
+  public SeekBar _zoom_slider;
+  public View _spuit_view;
+  private CalibrationView _calibration_view;
+  private int _calibration_index;
 
-  TouchDelegate _touch_delegate;
-  static APView _view = null;
-  AP_IO _io;
+  private APView _view = null;
+  private ImageInputOutput _image_io;
+  private boolean _getting_image_from_gallery = false;
 
   public Button _layer_btn, _width_btn, _color_btn, _density_btn,
       _change_pen_btn;
   Button _chosen_btn;
   public TextView _message_area;
-  public Gallery _image_gallery;
 
   static final String keyAPLayerNumber = "APLayerNumber";
   static final String keyLayerImage = "LayerImage";
@@ -57,7 +56,14 @@ public class AndroidPeinture extends Activity implements
   static final String keyCalibrationCenterY = "CalibrationCenterY";
   static final String keyCalibrationDiffX = "CalibrationDiffX";
   static final String keyCalibrationDiffY = "CalibrationDiffY";
-
+  static final String keyMaxPressure = "MaxPressure";
+  static final String keyMaxTapsize = "MaxTapsize";
+  static final String keyFingerFunction = "FingerFunction";
+  static final String keyUndoAcrossLayer = "UndoAcrossLayer";
+  
+  static final int codeRequestGalleryForSingleLayer = 0;
+  static final int codeRequestGalleryForAllLayers = 1;
+  
   RadioButton[][] _comp_method_btns;
 
   @Override
@@ -70,8 +76,8 @@ public class AndroidPeinture extends Activity implements
     _width = dm.widthPixels;
     
     setContentView(R.layout.main);
-    AndroidPeinture._view = (APView) findViewById(R.id.apview);
-    AndroidPeinture._view.start(this, _width, _height);
+    _view = (APView) findViewById(R.id.apview);
+    _view.start(this, _width, _height);
 
     _zoom_slider = (SeekBar) findViewById(R.id.zoom_slider);
     _zoom_slider.setOnSeekBarChangeListener(_view);
@@ -97,7 +103,7 @@ public class AndroidPeinture extends Activity implements
     });
 
     System.gc();
-    loadSavedState(savedInstanceState);
+//    loadPreferences();
 
     _layer_btn = (Button) findViewById(R.id.layer_button);
     _layer_btn.setOnClickListener(new View.OnClickListener() {
@@ -139,52 +145,28 @@ public class AndroidPeinture extends Activity implements
     
     setPaintButtons(_view._paints[_view._paint_index]);
 
-    _io = new AP_IO(this, _view);
-    _io.setSize(_width, _height);
-    _image_gallery = (Gallery) findViewById(R.id.image_gallery);
-    _image_gallery.setOnItemClickListener(_io);
-
-    setShowSelectors(false);
+    _image_io = new ImageInputOutput(this, _view);
+    _getting_image_from_gallery = false;
+    
+    setRequestedOrientation(getResources().getConfiguration().orientation);
   }
+  
 
-  public void DrawMode(View v) {
-    AndroidPeinture._view.setMode(APView.DRAW_MODE);
+  @Override
+  protected void onStop() {
+    super.onStop();
+
+    savePreferences();
   }
-
-  public void ShiftMode(View v) {
-    AndroidPeinture._view.setMode(APView.SHIFT_MODE);
-  }
-
-  void setShowSelectors(boolean show) {
-    int visibility = show ? View.VISIBLE : View.INVISIBLE;
-
-    _image_gallery.setVisibility(visibility);
-  }
-
-  LinearLayout clearOptionalControls() {
-    _view.setMode();
-    LinearLayout l = (LinearLayout) findViewById(R.id.optional_controls);
-    if (l.getChildCount() > 0)
-      l.removeAllViews();
-    return l;
-  }
-
-  void setPaintButtons(Paint paint) {
-    _width_btn.setText("W:" + String.format("%.1f", paint.getStrokeWidth()));
-    _color_btn.setTextColor(paint.getColor());
-    _density_btn
-        .setText("D:" + String.format("%.2f", paint.getAlpha() / 255.0));
-
-  }
-
-  void setPaintColor(int col, int x, int y) {
-    this.setPaintColor(col);
-    _view.layoutSpuitView(x, y);
-  }
-
-  void setPaintColor(int col) {
-    _color_btn.setTextColor(col);
-    _view.setPenColor(col);
+  
+  @Override
+  protected void onStart() {
+    super.onStart();
+    
+    if (_getting_image_from_gallery)
+      _getting_image_from_gallery = false;
+    else
+      loadPreferences();
   }
 
   @Override
@@ -192,6 +174,7 @@ public class AndroidPeinture extends Activity implements
     super.onNewIntent(intent);
     Uri idata = intent.getData();
     Log.i("peintureroid", "onNewIntent intent:" + idata);
+    if (idata == null) return;
     String ipath = idata.getPath();
     Log.i("peintureroid", "onNewIntent path:" + ipath);
 
@@ -209,24 +192,116 @@ public class AndroidPeinture extends Activity implements
   @Override
   protected void onResume() {
     super.onResume();
+    
     Intent intent = getIntent();
     Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
     if (uri != null) {
       Log.i("peintureroid", "onResume extra:" + uri);
-      Bitmap bitmap = AP_IO.loadImage(uri);
-      AndroidPeinture._view.setImage(0, bitmap);
-      _view.clear_pen_layer();
-      _view.change_layer(0);
+      _image_io.readImageAsPtpt(uri);
+      _view.clearPenLayer();
+      _view.changeLayer(0);
     }
+  }
+  
+  @Override
+  protected void onSaveInstanceState(Bundle outState) {
+    super.onSaveInstanceState(outState);
+
+    outState.putInt(keyAPLayerNumber, APView.LayerNumber);
+    final int[] cms = new int[_view._compositionMethods.length];
+    for (int i = 0; i < _view._compositionMethods.length; i ++)
+      cms[i] = _view._compositionMethods[i].ordinal();
+    outState.putIntArray(keyCompositionMethod, cms);
+
+    ByteArrayOutputStream ostream;
+    for (int li = 0; li < APView.LayerNumber; li++) {
+      ostream = new ByteArrayOutputStream();
+      if (_image_io.outputPNG(li, ostream))
+        outState.putByteArray(imageStateKeyName(li), ostream.toByteArray());
+      else
+        outState.remove(imageStateKeyName(li));
+    }
+  }
+  
+  @Override
+  protected void onRestoreInstanceState(Bundle state) {
+    super.onRestoreInstanceState(state);
+    
+    loadSavedState(state);
+  }
+
+  private void loadSavedState(Bundle savedState) {
+    if (savedState == null) {
+      loadPreferences();
+      return;
+    }
+
+    byte[] png_data;
+
+    for (int li = 0; li < APView.LayerNumber; li++) {
+      if (savedState.containsKey(imageStateKeyName(li))) {
+        png_data = savedState.getByteArray(imageStateKeyName(li));
+        _image_io.inputImage(li, png_data);
+      }
+    }
+    _view.clearPenLayer();
+    _view.changeLayer(0);
+    
+    final int[] cms = savedState.getIntArray(keyCompositionMethod);
+    _view._compositionMethods = new APView.Composition[cms.length];
+    for (int i = 0; i < cms.length; i ++)
+      _view._compositionMethods[i] = APView.Composition.values()[cms[i]];
+  }
+
+  public void DrawMode(View v) {
+    _view.setMode(ViewMode.DRAW);
+  }
+
+  public void ShiftMode(View v) {
+    _view.setMode(ViewMode.SHIFT);
+  }
+  
+  public void undoButtonPressed(View v) {
+    _view.undo();
+  }
+  
+  public void redoButtonPressed(View v) {
+    _view.redo();
+  }
+
+  LinearLayout clearOptionalControls() {
+    _view.setMode();
+    LinearLayout l = (LinearLayout) findViewById(R.id.optional_controls);
+    if (l.getChildCount() > 0)
+      l.removeAllViews();
+    _calibration_view.setVisibility(View.INVISIBLE);
+    return l;
+  }
+
+  void setPaintButtons(Paint paint) {
+    _width_btn.setText("W:" + String.format("%.1f", paint.getStrokeWidth()));
+    _color_btn.setTextColor(paint.getColor());
+    _density_btn
+        .setText("D:" + String.format("%.2f", paint.getAlpha() / 255.0));
+  }
+
+  void setPaintColor(int col, int x, int y) {
+    this.setPaintColor(col);
+    _view.layoutSpuitView(x, y);
+  }
+
+  void setPaintColor(int col) {
+    _color_btn.setTextColor(col);
+    _view.setPenColor(col);
   }
 
   public void showAboutAlert(View v) {
     String versionName;
     PackageManager pm = getPackageManager();
     try {
-      PackageInfo info = null;
-      info = pm.getPackageInfo("jp.sakira.peintureroid", 0);
-      versionName = info.versionName;
+      PackageInfo info = pm.getPackageInfo(getPackageName(),
+          PackageManager.GET_ACTIVITIES);
+      versionName = info.versionName; 
     } catch (NameNotFoundException e) {
       versionName = "";
     }
@@ -272,9 +347,9 @@ public class AndroidPeinture extends Activity implements
           rbs[j].setText(APView.CompositionNames[j]);
           rg.addView(rbs[j], j);
         }
-        rbs[APView._compositionMethods[i]].setChecked(true);
+        rbs[_view._compositionMethods[i].ordinal()].setChecked(true);
         Log.i("peintureroid", "layer:" + i + " comp:"
-            + APView._compositionMethods[i]);
+            + _view._compositionMethods[i]);
         hl.addView(rg);
       }
       l.addView(hl);
@@ -284,7 +359,7 @@ public class AndroidPeinture extends Activity implements
         public void onClick(View v) {
           LinearLayout lh = (LinearLayout)v.getParent();
           int index = l.indexOfChild(lh);
-          _view.change_layer(index);
+          _view.changeLayer(index);
           _layer_btn.setText("L:" + index);
           l.removeAllViews();
           _chosen_btn = null;
@@ -298,9 +373,9 @@ public class AndroidPeinture extends Activity implements
   public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
     if (isChecked) {
       for (int li = 1; li < APView.LayerNumber; li++)
-        for (int ci = 0; ci < APView.CompositionNumber; ci++)
+        for (int ci = 0; ci < APView.Composition.values().length; ci++)
           if (buttonView == this._comp_method_btns[li][ci]) {
-            _view.setCompositionMode(li, ci);
+            _view.setCompositionMode(li, APView.Composition.values()[ci]);
             Log.i("peintureroid", "layer:" + li + " comp:" + ci);
           }
     }
@@ -309,7 +384,7 @@ public class AndroidPeinture extends Activity implements
   void showWidthSlider() {
     final LinearLayout l = clearOptionalControls();
     final TextView title = new TextView(this);
-    final double a = 100 / Math.log(APView.PenWidthMax / APView.PenWidthMin);
+    final double a = 100 / Math.log(APView.penWidthMax / APView.PenWidthMin);
 
     if (_chosen_btn == _width_btn) {
       _chosen_btn = null;
@@ -328,19 +403,20 @@ public class AndroidPeinture extends Activity implements
       public void onProgressChanged(SeekBar seekBar, int progress,
           boolean fromTouch) {
         progress = Math.max(1, progress);
-        title.setText("Pen Width = " + 
-            String.format("%f", APView.PenWidthMin * Math.exp(progress / a)));
+        float w = (float)(APView.PenWidthMin * Math.exp(progress / a));
+        _view.setPenWidth(w);
+        progress = Math.max(1, progress);
+        title.setText("Pen Width = " + String.format("%f", w));
+        _view.drawCurrentPen();
       }
 
-      public void onStartTrackingTouch(SeekBar seekBar) {
-      }
+      public void onStartTrackingTouch(SeekBar seekBar) {}
 
       public void onStopTrackingTouch(SeekBar seekBar) {
-        int progress = seekBar.getProgress();
-        _view.setPenWidth((float)(APView.PenWidthMin * Math.exp(progress / a)));
         setPaintButtons(_view.paint());
         l.removeAllViews();
         _chosen_btn = null;
+        _view.clearCurrentPen();
       }
     });
   }
@@ -366,7 +442,7 @@ public class AndroidPeinture extends Activity implements
     l.addView(picker_btn);
     picker_btn.setOnClickListener(new View.OnClickListener() {
       public void onClick(View v) {
-        _view.setMode(APView.COLOR_PICK_MODE);
+        _view.setMode(ViewMode.COLOR_PICK);
         l.removeAllViews();
         _chosen_btn = null;
       }
@@ -432,7 +508,7 @@ public class AndroidPeinture extends Activity implements
     l.addView(picker_btn);
     picker_btn.setOnClickListener(new View.OnClickListener() {
       public void onClick(View v) {
-        _view.setMode(APView.COLOR_PICK_MODE);
+        _view.setMode(ViewMode.COLOR_PICK);
         l.removeAllViews();
         _chosen_btn = null;
       }
@@ -461,17 +537,17 @@ public class AndroidPeinture extends Activity implements
           boolean fromTouch) {
         title.setText("Pen Density = "
             + String.format("%.2f", progress / 255.0));
+        _view.setPenDensity(progress);
+        _view.drawCurrentPen();
       }
 
-      public void onStartTrackingTouch(SeekBar seekBar) {
-      }
+      public void onStartTrackingTouch(SeekBar seekBar) {}
 
       public void onStopTrackingTouch(SeekBar seekBar) {
-        int progress = seekBar.getProgress();
-        _view.setPenDensity(progress);
         l.removeAllViews();
         setPaintButtons(_view.paint());
         _chosen_btn = null;
+        _view.clearCurrentPen();
       }
     });
   }
@@ -508,6 +584,29 @@ public class AndroidPeinture extends Activity implements
         }
       });
     }
+  }
+  
+  void showPressureTapsizeCalibration() {
+    final LinearLayout l = clearOptionalControls();
+    _chosen_btn = null;
+    
+    int size = Math.min(_height, _width) / 2;
+    PressureTapsizeCalibrationView cview =
+        new PressureTapsizeCalibrationView(this, _view);
+    cview.layout(0, 0, size, size);
+    TextView tv;
+    tv = new TextView(this);
+    tv.setText(getString(R.string.Pressure));
+    l.addView(tv);
+    l.addView(cview.pressure_slider);
+    tv = new TextView(this);
+    tv.setText(getString(R.string.TapSize));
+    l.addView(tv);
+    l.addView(cview.tapsize_slider);
+    tv = new TextView(this);
+    tv.setText(getString(R.string.drag_the_blue_rect));
+    l.addView(tv);
+    l.addView(cview);
   }
   
   void setCalibrationView(CalibrationView v) {
@@ -547,49 +646,71 @@ public class AndroidPeinture extends Activity implements
       setCalibrationView(cv);
     }
   }
+  
+  private void setFingerFunction() {
+    final AlertDialog.Builder builder =
+        new AlertDialog.Builder(this);
+    builder.setTitle(getString(R.string.finger_function_title));
+//    builder.setMessage(getString(R.string.finger_function_description));
+    
+    final APView.FingerFunction[] ffs = APView.FingerFunction.values();
+    final String[] ffnames = new String[ffs.length];
+    for (int i = 0; i < ffnames.length; i ++) 
+      switch (ffs[i]) {
+      case Normal:
+        ffnames[i] = getString(R.string.finger_function_normal); break;
+      case Eraser:
+        ffnames[i] = getString(R.string.finger_function_eraser); break;
+      case Shift:
+        ffnames[i] = getString(R.string.finger_function_shift); break;
+      case None:
+        ffnames[i] = getString(R.string.finger_function_none); break;
+      }
+    
+    builder.setSingleChoiceItems(ffnames,
+        _view.fingerFunction().ordinal(), new OnClickListener() {
+          @Override
+          public void onClick(DialogInterface dialog, int which) {
+            _view.setFingerFunction(ffs[which]);
+            dialog.dismiss();
+          }
+        });
+   
+    builder.show();
+  }
+  
+  private void setUndoAcrossLayer() {
+    final AlertDialog.Builder builder =
+        new AlertDialog.Builder(this);
+    builder.setTitle(getString(R.string.undo_across_layer));
+    
+    String[] names = new String[2];
+    names[0] = getString(R.string.single_layer);
+    names[1] = getString(R.string.across_layers);
+    builder.setSingleChoiceItems(names,
+        UndoManager.undoAcrossLayers ? 1 : 0,
+        new OnClickListener() {
+          @Override
+          public void onClick(DialogInterface dialog, int which) {
+            if (which == 0) 
+              UndoManager.undoAcrossLayers = false;
+            else if (which == 1)
+              UndoManager.undoAcrossLayers = true;
+            _view._undo_manager.setup();
+            _view.changeLayer(_view._layer_index);
+            dialog.dismiss();
+          }
+        });
+   
+    builder.show();
+  }
 
-  String imageStateKeyName(int li) {
+  private String imageStateKeyName(int li) {
     return keyLayerImage + String.valueOf(li) + ".png";
   }
 
-  String compositionMethodKeyName(int li) {
+  private String compositionMethodKeyName(int li) {
     return keyCompositionMethod + String.valueOf(li);
-  }
-
-  @Override
-  protected void onSaveInstanceState(Bundle outState) {
-    super.onSaveInstanceState(outState);
-
-    outState.putInt(keyAPLayerNumber, APView.LayerNumber);
-    outState.putIntArray(keyCompositionMethod, APView._compositionMethods);
-
-    ByteArrayOutputStream ostream;
-    for (int li = 0; li < APView.LayerNumber; li++) {
-      ostream = new ByteArrayOutputStream();
-      if (_view.outputPNG(li, ostream))
-        outState.putByteArray(imageStateKeyName(li), ostream.toByteArray());
-      else
-        outState.remove(imageStateKeyName(li));
-    }
-  }
-
-  void loadSavedState(Bundle savedState) {
-    if (savedState == null) {
-      loadPreferences();
-      return;
-    }
-
-    byte[] png_data;
-
-    for (int li = 0; li < APView.LayerNumber; li++) {
-      if (savedState.containsKey(imageStateKeyName(li))) {
-        png_data = savedState.getByteArray(imageStateKeyName(li));
-        _view.inputImage(li, png_data);
-      }
-    }
-    _view.clear_pen_layer();
-    _view.change_layer(0);
-    
   }
 
   private void saveCalibrationResult() {
@@ -614,12 +735,17 @@ public class AndroidPeinture extends Activity implements
     }
   }
   
-  void savePreferences() {
+  private void savePreferences() {
     SharedPreferences pref = getPreferences(0);
     SharedPreferences.Editor editor = pref.edit();
     editor.putInt(keyAPLayerNumber, APView.LayerNumber);
     for (int i = 0; i < APView.LayerNumber; i++)
-      editor.putInt(compositionMethodKeyName(i), APView._compositionMethods[i]);
+      editor.putInt(compositionMethodKeyName(i), 
+          _view._compositionMethods[i].ordinal());
+    editor.putFloat(keyMaxPressure, _view._max_pressure);
+    editor.putFloat(keyMaxTapsize, _view._max_tapsize);
+    editor.putString(keyFingerFunction, _view.fingerFunction().name());
+    editor.putBoolean(keyUndoAcrossLayer, UndoManager.undoAcrossLayers);
     editor.commit();
     
     saveCalibrationResult();
@@ -627,10 +753,10 @@ public class AndroidPeinture extends Activity implements
     OutputStream ostream;
     for (int li = 0; li < APView.LayerNumber; li++) {
       boolean success = false;
-      if (APView._layers[li] != null) {
+      if (_view._layers[li] != null) {
         try {
           ostream = openFileOutput(imageStateKeyName(li), 0);
-          success = _view.outputPNG(li, ostream);
+          success = _image_io.outputPNG(li, ostream);
           ostream.close();
         } catch (IOException e) {
           e.printStackTrace();
@@ -645,15 +771,24 @@ public class AndroidPeinture extends Activity implements
     }
   }
 
-  void loadPreferences() {
+  private void loadPreferences() {
     SharedPreferences pref = getPreferences(0);
-    int cm;
+    int cm_;
     for (int i = 0; i < APView.LayerNumber; i++)
       if (pref.contains(compositionMethodKeyName(i))) {
-        cm = pref.getInt(compositionMethodKeyName(i), 0);
-        if (cm > 0)
-          APView._compositionMethods[i] = cm;
+        cm_ = pref.getInt(compositionMethodKeyName(i), 0);
+        if (cm_ > 0) {
+          final APView.Composition cm = APView.Composition.values()[cm_];  
+          _view._compositionMethods[i] = cm;
+        }
       }
+    _view._max_pressure = pref.getFloat(keyMaxPressure, 0.01f);
+    _view._max_tapsize = pref.getFloat(keyMaxTapsize, 0.01f);
+    String ffname = pref.getString(keyFingerFunction, APView.FingerFunction.Normal.name());
+    for (APView.FingerFunction ff : APView.FingerFunction.values())
+      if (ff.name().equals(ffname))
+        _view.setFingerFunction(ff);
+    UndoManager.undoAcrossLayers = pref.getBoolean(keyUndoAcrossLayer, false);
 
     loadCalibrationResult();
     
@@ -665,7 +800,7 @@ public class AndroidPeinture extends Activity implements
         if (fn.equals(filename)) {
           try {
             istream = openFileInput(imageStateKeyName(li));
-            _view.inputImage(li, istream);
+            _image_io.inputImage(li, istream);
             istream.close();
           } catch (IOException e) {
             e.printStackTrace();
@@ -673,15 +808,8 @@ public class AndroidPeinture extends Activity implements
         }
     }
 
-    _view.clear_pen_layer();
-    _view.change_layer(0);
-  }
-
-  @Override
-  protected void onStop() {
-    super.onStop();
-
-    savePreferences();
+    _view.clearPenLayer();
+    _view.changeLayer(0);
   }
 
   @Override
@@ -689,74 +817,95 @@ public class AndroidPeinture extends Activity implements
     super.onCreateOptionsMenu(menu);
     clearOptionalControls();
 
-    MenuItem item;
-
-    item = menu.add(0, 0, 0, "undo");
-    item.setIcon(R.drawable.menuitem_undo);
-    item = menu.add(0, 1, 0, "clear image");
-    item.setIcon(R.drawable.menuitem_new_image);
-    item = menu.add(0, 2, 0, "load to current layer");
-    item.setIcon(R.drawable.menuitem_load_image);
-    item = menu.add(0, 3, 0, "save image");
-    item.setIcon(R.drawable.menuitem_save_image);
-    item = menu.add(0, 4, 0, "save current layer");
-    item.setIcon(R.drawable.menuitem_save_current_layer);
-    item = menu.add(0, 5, 0, "calibration");
-    item.setIcon(R.drawable.menuitem_calibration);
-    item = menu.add(0, 6, 0, "quit");
-    item.setIcon(R.drawable.menuitem_quit);
+    MenuInflater inflater = getMenuInflater();
+    inflater.inflate(R.menu.mainmenu, menu);
 
     return true;
   }
 
   @Override
   public boolean onOptionsItemSelected(MenuItem item) {
+    Intent intent;
     switch (item.getItemId()) {
-    case 0: // undo
-      _view.undo();
-      return true;
-    case 1: // clear image
+    case R.id.menu_clear_image: // clear image
     {
       AlertDialog.Builder builder =
         new AlertDialog.Builder(this);
-      builder.setTitle("clear image");
-      builder.setMessage("Choose which layer you clear");
-      builder.setPositiveButton("only current layer",
+      builder.setTitle(getString(R.string.clear_image));
+      builder.setMessage(getString(R.string.choose_which_layer_you_clear));
+      builder.setPositiveButton(getString(R.string.only_current_layer),
           new DialogInterface.OnClickListener() {
         public void onClick(DialogInterface arg0, int arg1) {
           _view.initCurrentLayer();
         }});
-      builder.setNeutralButton("all layers", 
+      builder.setNeutralButton(getString(R.string.all_layers),
           new DialogInterface.OnClickListener() {
         public void onClick(DialogInterface dialog, int which) {
-          _view.clear_buf(_width, _height);
+          _view.clearBuffer(_width, _height);
         }});
 
       builder.show();
     }
       return true;
-    case 2: // load image to current layer
-      _io.setImages(_image_gallery);
-      _image_gallery.setVisibility(View.VISIBLE);
+    case R.id.menu_load_image: // load image to all layers
+      intent = new Intent();
+      intent.setType("image/png");
+      intent.setAction(Intent.ACTION_GET_CONTENT);
+      _getting_image_from_gallery = true;
+      startActivityForResult(intent, codeRequestGalleryForAllLayers);
+      return true;      
+    case R.id.menu_load_layer: // load image to current layer
+      intent = new Intent();
+      intent.setType("image/*");
+      intent.setAction(Intent.ACTION_GET_CONTENT);
+      _getting_image_from_gallery = true;
+      startActivityForResult(intent, codeRequestGalleryForSingleLayer);
       return true;
-    case 3: // save image
-      _io.saveImage(APView._bitmap, true);
+    case R.id.menu_save_image: // save image
+      _image_io.writeImageAsPtpt();
       return true;
-    case 4: // save current layer
-      _io.saveCurrentLayer();
+    case R.id.menu_save_layer: // save current layer
+      _image_io.writeImageOfCurrentLayer();
       return true;
-    case 5: // calibration
+    case R.id.menu_calibration: // calibration
       for (int i = 0; i < 4; i++)
         _view._diff_x[i] = _view._diff_y[i] = 0;
-      saveCalibrationResult();
-      
+      saveCalibrationResult();     
       _calibration_index = 0;
       setCalibrationView(_calibration_view);
       return true;
-    case 6: // quit
+    case R.id.menu_pressure_width: // pressure/tap-width calibration
+      showPressureTapsizeCalibration();
+      return true;
+    case R.id.menu_finger_function:
+      setFingerFunction();
+      return true;
+    case R.id.menu_undo_across_layer:
+      setUndoAcrossLayer();
+      return true;
+    case R.id.menu_quit: // quit
       savePreferences();
       finish();
     }
     return false;
   }
+  
+  @Override
+  public void onActivityResult(int request, int result, Intent data) {
+    super.onActivityResult(request, result, data);
+    
+    if (request == codeRequestGalleryForSingleLayer && result == Activity.RESULT_OK) {
+      _image_io.loadImageToCurrentLayer(data.getData());
+      _view.clearPenLayer();
+      _view.changeLayer(_view._layer_index);
+      _view.invalidate();
+    } else if (request == codeRequestGalleryForAllLayers && result == Activity.RESULT_OK) {
+      _image_io.readImageAsPtpt(data.getData());
+      _view.clearPenLayer();
+      _view.changeLayer(_view._layer_index);
+      _layer_btn.setText("L:" + _view._layer_index);
+      _view.invalidate();
+    }
+  }
+  
 }

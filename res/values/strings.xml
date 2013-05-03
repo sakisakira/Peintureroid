@@ -2,5 +2,38 @@
 <resources>
     
     <string name="app_name">Peintureroid</string>
-
+    <string name="Col">Col</string>
+    <string name="DrawMode">Mode</string>
+    <string name="Draw">Draw</string>
+    <string name="Shift">Shift</string>
+    <string name="Undo">Undo</string>
+    <string name="Cancel">Cancel</string>
+    <string name="Dismiss">Dismiss</string>
+    <string name="choose_which_layer_you_clear">Choose which layer you clear</string>
+    <string name="only_current_layer">only current layer</string>
+    <string name="all_layers">all layers</string>
+    <string name="clear_image">clear image</string>
+    <string name="load">load image</string>
+    <string name="load_image">load to all layers</string>
+    <string name="load_to_current_layer">load to current layer</string>
+    <string name="save">save</string>
+    <string name="save_image">save image</string>
+    <string name="save_current_layer">save current layer</string>
+    <string name="settings">settings</string>
+    <string name="calibraion">calibration</string>
+    <string name="pressure_tap_width_cal">pressure tap-width cal.</string>
+    <string name="finger_function">finger function</string>
+    <string name="undo_across_layer">undo across layer</string>
+    <string name="across_layers">across all layers</string>
+    <string name="single_layer">single but quick</string>
+    <string name="quit">quit</string>
+    <string name="Pressure">Pressure</string>
+    <string name="TapSize">Tap-Size</string>
+    <string name="drag_the_blue_rect">Drag the blue rect below with MAX pressure and MAX tap-size.</string>
+    <string name="finger_function_title">Finger Function Setting</string>
+    <string name="finger_function_description">If your device can distinct stylus-tapping from finger-tapping, you can set the function of finger-tapping.\nIf your device cannot distinct, DO NOT set except "Normal" or you could not draw.</string>
+    <string name="finger_function_normal">Normal</string>
+    <string name="finger_function_eraser">Eraser</string>
+    <string name="finger_function_shift">Shift</string>
+    <string name="finger_function_none">None</string>
 </resources>

@@ -2,9 +2,11 @@ package jp.sakira.peintureroid;
 
 import java.util.Vector;
 
+import android.annotation.TargetApi;
 import android.util.Log;
 import android.view.MotionEvent;
 
+@TargetApi(5)
 public class MultitouchHandler {
   Vector<Integer> _touch_ids;
   float[] _prev_xs, _prev_ys;
@@ -51,7 +53,7 @@ public class MultitouchHandler {
     switch (e.getAction() & MotionEvent.ACTION_MASK) {
     case MotionEvent.ACTION_DOWN:
     case MotionEvent.ACTION_POINTER_DOWN: 
-      for (int i = 0; i < id_count; i ++) {
+      for (int i = 0; i < Math.min(id_count, 2); i ++) {
         this._prev_xs[i] = e.getX(this._touch_ids.get(i));
         this._prev_ys[i] = e.getY(this._touch_ids.get(i));
       }
@@ -80,11 +82,13 @@ public class MultitouchHandler {
             (y0 - y1) * (y0 - y1));
       
         float nzoom = _view._zoom * (float)(dist / this._prev_dist);
-        _view._shift_x += _view._x1 * (1.0f / _view._zoom - 1.0f / nzoom);
-        _view._shift_y += _view._y1 * (1.0f / _view._zoom - 1.0f / nzoom);        
+//        _view._shift_x += _view._x1 * (1.0f / _view._zoom - 1.0f / nzoom);
+//        _view._shift_y += _view._y1 * (1.0f / _view._zoom - 1.0f / nzoom);        
+        _view._shift_x += cx * (1.0f / _view._zoom - 1.0f / nzoom);
+        _view._shift_y += cy * (1.0f / _view._zoom - 1.0f / nzoom);        
         _view._shift_x -= (cx - this._prev_cx) / _view._zoom;
         _view._shift_y -= (cy - this._prev_cy) / _view._zoom;
-        Log.d("peintu", "prev_dist:" + _prev_dist + " dist:" + dist);
+        Log.i("peintureroid", "prev_dist:" + _prev_dist + " dist:" + dist);
         _view._zoom = nzoom;
         _view.adjust_shift();
         this._prev_xs[0] = x0;
@@ -94,6 +98,9 @@ public class MultitouchHandler {
         this._prev_cx = cx;
         this._prev_cy = cy;
         this._prev_dist = dist;
+        
+        _view._x0 = _view._x1 = (int)cx;
+        _view._y0 = _view._y1 = (int)cy;
       }
       break;
     case MotionEvent.ACTION_UP:

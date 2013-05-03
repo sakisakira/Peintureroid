@@ -21,7 +21,7 @@
     <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
     		android:id="@+id/width_button" android:text="W:10"></Button>
     <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
-    		android:id="@+id/color_button" android:text="Col"></Button>
+    		android:id="@+id/color_button" android:text="@string/Col"></Button>
     <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
     		android:id="@+id/density_button" android:text="D:0.50"></Button>
     <Button android:layout_width="wrap_content" android:layout_height="wrap_content" 
@@ -37,24 +37,30 @@
       android:textSize="12sp"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content" />
+
   </LinearLayout>
+
+  <TextView
+    android:id="@+id/message_area"
+    android:layout_width="fill_parent"
+    android:layout_height="wrap_content"
+    android:text="@string/DrawMode" />
+
+  
   <LinearLayout android:layout_width="fill_parent" android:layout_height="fill_parent" 
   	android:orientation="vertical" 
     android:padding="10dp"
-  		android:id="@+id/optional_controls"></LinearLayout>
-  <LinearLayout android:layout_width="fill_parent" android:layout_height="fill_parent" 
-  	android:orientation="vertical">
-    <TextView android:layout_width="fill_parent" android:layout_height="wrap_content" 
-    		android:id="@+id/message_area" android:text="Draw Mode"></TextView>
-    <Gallery android:layout_width="fill_parent" android:layout_height="fill_parent" 
-    		android:id="@+id/image_gallery" android:text="Draw Mode"></Gallery>
+  		android:id="@+id/optional_controls">
+
   </LinearLayout>
 </LinearLayout>
+
 <LinearLayout
-    android:orientation="vertical"
-    android:gravity="bottom"
     android:layout_width="fill_parent"
-    android:layout_height="fill_parent">
+    android:layout_height="fill_parent"
+    android:gravity="bottom|center_vertical"
+    android:orientation="vertical" >
+
   <SeekBar android:id="@+id/zoom_slider"
     android:max="1600"
     android:visibility="invisible"
@@ -62,41 +68,70 @@
     android:layout_height="wrap_content"
     android:layout_marginLeft="10dp"
     android:layout_marginRight="10dp"/>
-  <LinearLayout
-    android:orientation="horizontal"
-    android:layout_width="fill_parent"
-    android:layout_height="wrap_content">
-    <RadioGroup
-      android:orientation="horizontal"
-      android:checkedButton="@+id/draw_mode_button"
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content">
-      <RadioButton
-        android:text="Draw"
-        android:id="@id/draw_mode_button"
-        android:onClick="DrawMode"
-        android:textColor="#888"
-        android:textSize="16sp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
-      <RadioButton
-        android:text="Shift"
-        android:id="@+id/shift_mode_button"
-        android:onClick="ShiftMode"
-        android:textColor="#888"
-        android:textSize="16sp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"/>
-    </RadioGroup>
-    <TextView android:id="@+id/info_label" 
-      android:singleLine="true"
-      android:textColor="#888"
-      android:textSize="16sp"
+
+  <RelativeLayout
       android:layout_width="fill_parent"
-      android:layout_height="wrap_content"
-      android:layout_gravity="right"
-      android:layout_marginLeft="5dp" android:text=" "/>
-  </LinearLayout>
+      android:layout_height="wrap_content" >
+
+      <RadioGroup
+          android:id="@+id/mode_buttons"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:checkedButton="@+id/draw_mode_button"
+          android:orientation="horizontal" >
+
+          <RadioButton
+              android:id="@id/draw_mode_button"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:onClick="DrawMode"
+              android:text="@string/Draw"
+              android:textColor="#888"
+              android:textSize="16sp" />
+
+          <RadioButton
+              android:id="@+id/shift_mode_button"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:onClick="ShiftMode"
+              android:text="@string/Shift"
+              android:textColor="#888"
+              android:textSize="16sp" />
+      </RadioGroup>
+
+      <ImageButton
+          android:id="@+id/redo_button"
+          android:layout_width="44dp"
+          android:layout_height="44dp"
+          android:layout_alignParentRight="true"
+          android:contentDescription="redo"
+          android:background="#0000"
+          android:onClick="redoButtonPressed"
+          android:src="@drawable/redo_button" />
+
+      <TextView
+          android:id="@+id/undo_label"
+          android:layout_width="wrap_content"
+          android:layout_height="44dp"
+          android:layout_toLeftOf="@id/redo_button"
+          android:gravity="center"
+          android:layout_margin="5dp"
+          android:lines="2"
+          android:textAlignment="center"
+          android:text="@string/Undo"/>
+
+      <ImageButton
+          android:id="@+id/undo_button"
+          android:layout_width="44dp"
+          android:layout_height="44dp"
+          android:layout_toLeftOf="@id/undo_label"
+          android:background="#0000"
+          android:contentDescription="undo"
+          android:onClick="undoButtonPressed"
+          android:src="@drawable/undo_button" />
+      
+  </RelativeLayout>
+
 </LinearLayout>
 <RelativeLayout
   android:layout_width="fill_parent"
@@ -109,5 +144,7 @@
     android:visible="false"
     android:layout_width="100dp"
     android:layout_height="100dp" />
+
 </RelativeLayout>
+
 </FrameLayout>
