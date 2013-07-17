@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="dexedLibs">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/bin/dexedLibs/android-support-v4-70b7e4d7feb6f9a03c68085d512fb9e1.jar!/" />
+      <root url="jar://$PROJECT_DIR$/bin/dexedLibs/android-support-v4-82cdb82f27608d6a54bf918f8799b404.jar!/" />
+      <root url="jar://$PROJECT_DIR$/bin/dexedLibs/androidannotations-api-2.7.1-596cfda3bc5ffe662593c1874f07ff5c.jar!/" />
+      <root url="jar://$PROJECT_DIR$/bin/dexedLibs/androidannotations-api-2.7.1-a52525a938bd6f7a4d57bbeac63baa9a.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
